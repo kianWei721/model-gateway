@@ -1,0 +1,32 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:gateway;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+
+gateway:
+  deadline: 4s
+  attempt-timeout: 2s
+  admin-token: test-admin-token
+  secrets:
+    master-keys: v1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
+    current-master-key-version: v1
+  allowed-upstream-hosts: [127.0.0.1]
+  providers:
+    dashscope: { protocol: OPENAI, base-url: "${fake.base:http://127.0.0.1:9}/dashscope/v1", region: DOMESTIC, connect-timeout: 1s }
+    deepseek: { protocol: OPENAI, base-url: "${fake.base:http://127.0.0.1:9}/deepseek/v1", region: DOMESTIC, connect-timeout: 1s }
+    anthropic: { protocol: ANTHROPIC, base-url: "${fake.base:http://127.0.0.1:9}/anthropic/v1", region: OVERSEAS, connect-timeout: 1s }
+  models:
+    - { provider: dashscope, model: qwen-plus, currency: CNY, input-per-million: 0.80, cached-input-per-million: 0.16, output-per-million: 2.00, default-max-tokens: 1000 }
+    - { provider: deepseek, model: deepseek-chat, currency: CNY, input-per-million: 2.00, cached-input-per-million: 0.50, output-per-million: 8.00, default-max-tokens: 1000 }
+    - { provider: deepseek, model: deepseek-reasoner, currency: CNY, input-per-million: 4.00, output-per-million: 16.00, supports-tools: false, default-max-tokens: 1000 }
+    - { provider: anthropic, model: claude-opus-5-5, currency: USD, input-per-million: 4.00, cached-input-per-million: 0.20, output-per-million: 20.00,
+        forward-sampling: false, supports-tools: false, default-max-tokens: 1000 }
+  routes:
+    standard: [dashscope/qwen-plus, deepseek/deepseek-chat]
+    reasoning: [anthropic/claude-opus-5-5, deepseek/deepseek-reasoner]
+  daily-budgets:
+    finance:
+      CNY: 100
+    tiny:
+      CNY: 0.000001

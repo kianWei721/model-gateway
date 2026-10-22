@@ -1,0 +1,93 @@
+spring:
+  application:
+    name: model-gateway
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: ${GATEWAY_DB_URL:jdbc:mysql://localhost:3306/model_gateway?serverTimezone=UTC}
+    username: ${GATEWAY_DB_USERNAME:gateway}
+    password: ${GATEWAY_DB_PASSWORD:}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: ${GATEWAY_PORT:8090}
+
+gateway:
+  deadline: 45s
+  attempt-timeout: 40s
+  max-attempts: 3
+  billing-zone: Asia/Shanghai
+  admin-token: ${GATEWAY_ADMIN_TOKEN:}
+  secrets:
+    # version:base64(32 random bytes), comma separated; generate with: openssl rand -base64 32
+    master-keys: ${GATEWAY_MASTER_KEYS:}
+    current-master-key-version: ${GATEWAY_MASTER_KEY_VERSION:v1}
+  alerts:
+    wecom-webhook-url: ${GATEWAY_WECOM_WEBHOOK:}
+    budget-thresholds: [0.8, 1.0]
+
+---
+# Demo catalog. Every price below except Claude's is a placeholder: check the vendor's price list
+# before relying on the numbers. Claude prices follow Anthropic's published per-MTok rates.
+spring:
+  config:
+    activate:
+      on-profile: "!test"
+
+gateway:
+  # Official endpoints only. A third-party relay is exactly where a cheaper model gets swapped in.
+  allowed-upstream-hosts:
+    - dashscope.aliyuncs.com
+    - api.deepseek.com
+    - api.moonshot.cn
+    - api.openai.com
+    - api.anthropic.com
+  providers:
+    dashscope:
+      protocol: OPENAI
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      region: DOMESTIC
+      bootstrap-key-env: DASHSCOPE_API_KEY
+    deepseek:
+      protocol: OPENAI
+      base-url: https://api.deepseek.com/v1
+      region: DOMESTIC
+      bootstrap-key-env: DEEPSEEK_API_KEY
+    moonshot:
+      protocol: OPENAI
+      base-url: https://api.moonshot.cn/v1
+      region: DOMESTIC
+      bootstrap-key-env: MOONSHOT_API_KEY
+    openai:
+      protocol: OPENAI
+      base-url: https://api.openai.com/v1
+      region: OVERSEAS
+      proxy: ${GATEWAY_OVERSEAS_PROXY:}
+      bootstrap-key-env: OPENAI_API_KEY
+    anthropic:
+      protocol: ANTHROPIC
+      base-url: https://api.anthropic.com/v1
+      region: OVERSEAS
+      proxy: ${GATEWAY_OVERSEAS_PROXY:}
+      bootstrap-key-env: ANTHROPIC_API_KEY
+  models:
+    - { provider: dashscope, model: qwen-turbo, currency: CNY, input-per-million: 0.30, output-per-million: 0.60 }
+    - { provider: dashscope, model: qwen-plus, currency: CNY, input-per-million: 0.80, output-per-million: 2.00 }
+    - { provider: deepseek, model: deepseek-chat, currency: CNY, input-per-million: 2.00, cached-input-per-million: 0.50, output-per-million: 8.00 }
+    - { provider: deepseek, model: deepseek-reasoner, currency: CNY, input-per-million: 4.00, cached-input-per-million: 1.00, output-per-million: 16.00, supports-tools: false }
+    - { provider: moonshot, model: moonshot-v1-32k, currency: CNY, input-per-million: 24.00, output-per-million: 24.00 }
+    - { provider: openai, model: gpt-4.1, currency: USD, input-per-million: 2.00, cached-input-per-million: 0.50, output-per-million: 8.00 }
+    # Current Claude models reject temperature/top_p, and tool calls are not translated yet.
+    - { provider: anthropic, model: claude-opus-5-5, currency: USD, input-per-million: 4.00, cached-input-per-million: 0.20, output-per-million: 20.00,
+        forward-sampling: false, supports-tools: false, default-max-tokens: 16000 }
+  routes:
+    light: [dashscope/qwen-turbo, deepseek/deepseek-chat]
+    standard: [dashscope/qwen-plus, deepseek/deepseek-chat, moonshot/moonshot-v1-32k]
+    reasoning: [anthropic/claude-opus-5-5, openai/gpt-4.1, deepseek/deepseek-reasoner]
+  daily-budgets:
+    finance:
+      CNY: 200
+      USD: 20
