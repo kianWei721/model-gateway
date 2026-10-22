@@ -31,6 +31,13 @@ class DemoCatalogTest {
         UpstreamModel flash = catalog.model("dashscope/qwen3.8-flash").orElseThrow();
         assertEquals(Boolean.FALSE, flash.extraBody().get("enable_thinking"), "typed, not the string \"false\"");
 
+        // Unverified capabilities are not offered: tool and JSON requests skip it.
+        UpstreamModel deepseekOnBailian = catalog.model("dashscope/deepseek-v4.1-flash-1017").orElseThrow();
+        assertEquals(deepseekOnBailian, catalog.route("standard").orElseThrow().getFirst());
+        assertFalse(deepseekOnBailian.supportsTools());
+        assertFalse(deepseekOnBailian.supportsJsonOutput());
+        assertEquals(Boolean.FALSE, deepseekOnBailian.extraBody().get("enable_thinking"));
+
         UpstreamModel claude = catalog.model("anthropic/claude-opus-5-5").orElseThrow();
         assertFalse(claude.supportsJsonOutput());
         assertFalse(claude.forwardSampling());
