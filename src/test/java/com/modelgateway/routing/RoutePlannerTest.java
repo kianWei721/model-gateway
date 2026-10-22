@@ -22,16 +22,31 @@ class RoutePlannerTest {
 
     @Test
     void domesticKeyShouldNeverReachOverseasUpstreamEvenAsFallback() {
-        List<String> plan = ids(planner.plan("reasoning", key(false), new RequestTraits(false)));
+        List<String> plan = ids(planner.plan("reasoning", key(false), new RequestTraits(false, false)));
 
         assertEquals(List.of("deepseek/deepseek-reasoner"), plan);
     }
 
     @Test
     void clearedKeyShouldKeepDeclaredOrder() {
-        List<String> plan = ids(planner.plan("reasoning", key(true), new RequestTraits(false)));
+        List<String> plan = ids(planner.plan("reasoning", key(true), new RequestTraits(false, false)));
 
         assertEquals(List.of("anthropic/claude-opus-5-5", "deepseek/deepseek-reasoner"), plan);
+    }
+
+    @Test
+    void jsonRequestsShouldNeverFailOverToAModelThatIgnoresResponseFormat() {
+        List<String> plan = ids(planner.plan("reasoning", key(true), new RequestTraits(false, true)));
+
+        assertEquals(List.of("deepseek/deepseek-reasoner"), plan);
+    }
+
+    @Test
+    void logprobsAndLogitBiasShouldNeverReachAProtocolThatDropsThem() {
+        // The Anthropic adapter rebuilds the request and would silently drop these fields.
+        List<String> plan = ids(planner.plan("reasoning", key(true), new RequestTraits(false, false, true)));
+
+        assertEquals(List.of("deepseek/deepseek-reasoner"), plan);
     }
 
     @Test
@@ -39,20 +54,20 @@ class RoutePlannerTest {
         GatewayException exception =
                 assertThrows(
                         GatewayException.class,
-                        () -> planner.plan("reasoning", key(true), new RequestTraits(true)));
+                        () -> planner.plan("reasoning", key(true), new RequestTraits(true, false)));
 
         assertEquals("NO_ELIGIBLE_UPSTREAM", exception.code());
         assertTrue(exception.getMessage().contains("anthropic/claude-opus-5-5 (no tool calling)"));
         assertEquals(
                 List.of("dashscope/qwen-plus", "deepseek/deepseek-chat"),
-                ids(planner.plan("standard", key(false), new RequestTraits(true))));
+                ids(planner.plan("standard", key(false), new RequestTraits(true, false))));
     }
 
     @Test
     void shouldRejectUnknownAndForbiddenRoutes() {
         assertEquals(
                 "UNKNOWN_ROUTE",
-                assertThrows(GatewayException.class, () -> planner.plan("gpt-4", key(true), new RequestTraits(false)))
+                assertThrows(GatewayException.class, () -> planner.plan("gpt-4", key(true), new RequestTraits(false, false)))
                         .code());
 
         ClientKey standardOnly =
@@ -60,7 +75,7 @@ class RoutePlannerTest {
         GatewayException forbidden =
                 assertThrows(
                         GatewayException.class,
-                        () -> planner.plan("reasoning", standardOnly, new RequestTraits(false)));
+                        () -> planner.plan("reasoning", standardOnly, new RequestTraits(false, false)));
         assertEquals(403, forbidden.status());
     }
 

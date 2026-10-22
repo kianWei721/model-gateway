@@ -166,6 +166,68 @@ class GatewayFlowTest {
     }
 
     @Test
+    void vendorFieldsFromCallersShouldBeRejectedNotPassedThrough() {
+        FAKE.on(DASHSCOPE, request -> openAiOk("qwen-plus", usage(1, 1)));
+
+        HttpResponse<String> response =
+                post(key("finance", false), HELLO.replace("{", "{\"enable_search\":true,"));
+
+        assertEquals(400, response.statusCode());
+        assertEquals("UNSUPPORTED_FIELD", body(response).path("error").path("code").asString());
+        assertTrue(body(response).path("error").path("message").asString().contains("enable_search"));
+        assertNotNull(header(response, "X-Gateway-Request-Id"));
+        assertTrue(FAKE.requestsTo(DASHSCOPE).isEmpty());
+    }
+
+    @Test
+    void standardSamplingFieldsShouldReachAnOpenAiUpstreamUntouched() {
+        FAKE.on(DASHSCOPE, request -> openAiOk("qwen-plus", usage(1, 1)));
+
+        HttpResponse<String> response =
+                post(
+                        key("finance", false),
+                        HELLO.replace(
+                                "{",
+                                "{\"logprobs\":true,\"top_logprobs\":2,\"logit_bias\":{\"1234\":-100},"));
+
+        assertEquals(200, response.statusCode());
+        JsonNode sent = json.readTree(FAKE.requestsTo(DASHSCOPE).getFirst().body());
+        assertTrue(sent.path("logprobs").asBoolean());
+        assertEquals(2, sent.path("top_logprobs").asInt());
+        assertEquals(-100, sent.path("logit_bias").path("1234").asInt());
+    }
+
+    @Test
+    void callerDeadlineShouldStopTheGatewayBeforeItSpendsMoney() {
+        FAKE.on(DASHSCOPE, request -> openAiOk("qwen-plus", usage(1, 1)));
+
+        HttpResponse<String> response = post(key("finance", false), HELLO, Map.of("X-Gateway-Deadline-Ms", "500"));
+
+        assertEquals(504, response.statusCode());
+        assertEquals("DEADLINE_EXCEEDED", body(response).path("error").path("code").asString());
+        assertTrue(FAKE.requestsTo(DASHSCOPE).isEmpty(), "less than one attempt's worth of time left: do not start one");
+    }
+
+    @Test
+    void correlationIdShouldLinkTheCallerTraceToEveryAttempt() {
+        FAKE.on(DASHSCOPE, request -> Reply.json(503, "{}"));
+        FAKE.on(DEEPSEEK, request -> openAiOk("deepseek-chat", usage(5, 5)));
+        String correlation = "kr-" + UUID.randomUUID();
+
+        HttpResponse<String> response = post(key("finance", false), HELLO, Map.of("X-Correlation-Id", correlation));
+
+        assertEquals(200, response.statusCode());
+        assertEquals(correlation, header(response, "X-Correlation-Id"));
+        JsonNode attempts = body(admin("GET", "/admin/requests?correlationId=" + correlation, null, "test-admin-token"));
+        assertEquals(2, attempts.size(), "the failed and the successful attempt");
+        assertEquals(header(response, "X-Gateway-Request-Id"), attempts.get(0).path("request_id").asString());
+
+        HttpResponse<String> invalid = post(key("finance", false), HELLO, Map.of("X-Correlation-Id", "has spaces"));
+        assertEquals("INVALID_CORRELATION_ID", body(invalid).path("error").path("code").asString());
+        assertNotNull(header(invalid, "X-Gateway-Request-Id"));
+    }
+
+    @Test
     void badRequestShouldNotFailOver() {
         FAKE.on(DASHSCOPE, request -> Reply.json(400, "{\"error\":{\"message\":\"messages too long\"}}"));
         FAKE.on(DEEPSEEK, request -> openAiOk("deepseek-chat", usage(1, 1)));
@@ -185,6 +247,7 @@ class GatewayFlowTest {
 
         assertEquals(429, response.statusCode());
         assertEquals("BUDGET_EXCEEDED", body(response).path("error").path("code").asString());
+        assertNotNull(header(response, "X-Gateway-Request-Id"), "rejections are traceable too");
         assertTrue(FAKE.requestsTo(DASHSCOPE).isEmpty());
     }
 
@@ -305,11 +368,16 @@ class GatewayFlowTest {
     }
 
     private HttpResponse<String> post(String clientKey, String body) {
-        return send(HttpRequest.newBuilder(uri("/v1/chat/completions"))
+        return post(clientKey, body, Map.of());
+    }
+
+    private HttpResponse<String> post(String clientKey, String body, Map<String, String> extraHeaders) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(uri("/v1/chat/completions"))
                 .header("Authorization", "Bearer " + clientKey)
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body))
-                .build());
+                .POST(HttpRequest.BodyPublishers.ofString(body));
+        extraHeaders.forEach(builder::header);
+        return send(builder.build());
     }
 
     private HttpResponse<String> admin(String method, String path, String body, String token) {

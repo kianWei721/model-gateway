@@ -30,13 +30,14 @@ public class LedgerRepository {
         jdbcTemplate.update(
                 """
                 INSERT INTO gw_call_attempt (
-                    request_id, attempt_no, client_key_id, team, project, route, provider, model, region,
+                    request_id, correlation_id, attempt_no, client_key_id, team, project, route, provider, model, region,
                     served_model, model_check, provider_key_fingerprint, outcome, failure_kind, http_status,
                     input_tokens, cached_input_tokens, cache_write_tokens, output_tokens, reasoning_tokens,
                     cost, cost_estimated, currency, request_hash, latency_ms, usage_date, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 record.requestId(),
+                record.correlationId(),
                 record.attemptNo(),
                 record.clientKeyId(),
                 record.team(),
@@ -135,11 +136,23 @@ public class LedgerRepository {
         return new ArrayList<>(
                 jdbcTemplate.queryForList(
                         """
-                        SELECT attempt_no, provider, model, served_model, model_check, provider_key_fingerprint,
+                        SELECT attempt_no, correlation_id, provider, model, served_model, model_check, provider_key_fingerprint,
                                outcome, failure_kind, http_status, cost, cost_estimated, currency, latency_ms
                         FROM gw_call_attempt WHERE request_id = ? ORDER BY attempt_no
                         """,
                         requestId));
+    }
+
+    /** Everything one caller-side operation caused, across all its gateway requests. */
+    public List<Map<String, Object>> attemptsByCorrelation(String correlationId) {
+        return new ArrayList<>(
+                jdbcTemplate.queryForList(
+                        """
+                        SELECT request_id, attempt_no, route, provider, model, served_model, model_check,
+                               outcome, failure_kind, http_status, cost, cost_estimated, currency, latency_ms, created_at
+                        FROM gw_call_attempt WHERE correlation_id = ? ORDER BY created_at, request_id, attempt_no
+                        """,
+                        correlationId));
     }
 
     public record ModelTotals(long promptTokens, long outputTokens, int unknownAttempts) {}

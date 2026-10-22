@@ -8,9 +8,11 @@ import java.time.LocalDate;
 /**
  * One upstream attempt. {@code model} is the configured model and the pricing basis;
  * {@code servedModel} is what the upstream claimed and is only compared against it.
+ * {@code correlationId} is the caller's trace id, when it sent one.
  */
 public record AttemptRecord(
         String requestId,
+        String correlationId,
         int attemptNo,
         String clientKeyId,
         String team,

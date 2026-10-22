@@ -76,6 +76,10 @@ public record GatewayProperties(
      * @param forwardSampling whether temperature/top_p are passed on; some models reject them
      * @param refusalFallback Anthropic only: let the upstream re-run refused requests on another
      *     model. Off by default because the gateway promises that the configured model serves.
+     * @param supportsJsonOutput whether {@code response_format} JSON modes are honoured
+     * @param extraBody vendor-specific request fields the gateway adds for this model, such as
+     *     DashScope's {@code enable_thinking}. Callers may only send standard fields, so anything
+     *     that changes cost or behaviour is decided here by the operator, not by the caller.
      */
     public record ModelConfig(
             String provider,
@@ -90,5 +94,7 @@ public record GatewayProperties(
             @DefaultValue("true") boolean forwardSampling,
             @DefaultValue("16") int maxConcurrency,
             @DefaultValue("4096") int defaultMaxTokens,
-            @DefaultValue("false") boolean refusalFallback) {}
+            @DefaultValue("false") boolean refusalFallback,
+            @DefaultValue("true") boolean supportsJsonOutput,
+            Map<String, String> extraBody) {}
 }

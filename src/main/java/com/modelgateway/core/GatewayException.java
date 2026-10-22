@@ -31,4 +31,11 @@ public class GatewayException extends RuntimeException {
     public Map<String, String> headers() {
         return headers;
     }
+
+    /** Same failure with extra response headers; headers already set by the thrower win. */
+    public GatewayException withHeaders(Map<String, String> extra) {
+        Map<String, String> merged = new java.util.LinkedHashMap<>(extra);
+        merged.putAll(headers);
+        return new GatewayException(status, code, getMessage(), merged);
+    }
 }

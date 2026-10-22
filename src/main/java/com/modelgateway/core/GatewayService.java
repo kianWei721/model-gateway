@@ -104,20 +104,45 @@ public final class GatewayService {
         this.maxAttempts = maxAttempts;
     }
 
-    public GatewayResult complete(ClientKey key, ObjectNode request) {
+    /**
+     * @param callerDeadlineMs how long the caller will still wait ({@code X-Gateway-Deadline-Ms});
+     *     the gateway never keeps trying, and paying, after the caller has given up
+     * @param correlationId the caller's own trace id ({@code X-Correlation-Id}), stored with every
+     *     attempt so either side can be traced from the other
+     */
+    public GatewayResult complete(ClientKey key, ObjectNode request, String callerDeadlineMs, String correlationId) {
         Instant startedAt = clock.instant();
-        Instant deadlineAt = startedAt.plus(deadline);
-        Exchange exchange = new Exchange("req-" + UUID.randomUUID(), key, sha256(jsonMapper.writeValueAsBytes(request)));
+        String correlation = validCorrelationId(correlationId) ? correlationId : null;
+        Exchange exchange =
+                new Exchange("req-" + UUID.randomUUID(), key, sha256(jsonMapper.writeValueAsBytes(request)), correlation);
+        try {
+            if (correlationId != null && correlation == null) {
+                throw new GatewayException(400, "INVALID_CORRELATION_ID",
+                        "X-Correlation-Id must be 1-128 characters of letters, digits, '.', '_', ':' or '-'");
+            }
+            return run(exchange, request, startedAt.plus(effectiveDeadline(callerDeadlineMs)));
+        } catch (GatewayException failure) {
+            // Every answer, error or not, names the request so the caller can quote it to us.
+            throw failure.withHeaders(exchange.identityHeaders());
+        }
+    }
 
+    private GatewayResult run(Exchange exchange, ObjectNode request, Instant deadlineAt) {
+        ClientKey key = exchange.key;
         if (!rpmLimiter.tryAcquire(key.id(), key.rpm())) {
             throw new GatewayException(429, "RATE_LIMITED", "Key exceeded " + key.rpm() + " requests per minute",
-                    Map.of("Retry-After", "1", "X-Gateway-Request-Id", exchange.requestId));
+                    Map.of("Retry-After", "1"));
         }
-        if (request.path("stream").asBoolean(false)) {
-            throw new GatewayException(400, "STREAMING_UNSUPPORTED", "stream=true is not supported by this gateway yet");
-        }
+        validate(request);
         String route = request.path("model").asString("");
-        List<UpstreamModel> candidates = planner.plan(route, key, new RequestTraits(RequestFields.usesTools(request)));
+        List<UpstreamModel> candidates =
+                planner.plan(
+                        route,
+                        key,
+                        new RequestTraits(
+                                RequestFields.usesTools(request),
+                                RequestFields.usesJsonOutput(request),
+                                RequestFields.usesLogitControls(request)));
         int estimatedPrompt = TokenEstimator.estimatePromptTokens(request);
 
         for (int index = 0; index < candidates.size(); index++) {
@@ -151,6 +176,45 @@ public final class GatewayService {
                 "NO_UPSTREAM_AVAILABLE",
                 "No upstream of route '" + route + "' could serve the request",
                 exchange.headers(route, null, null));
+    }
+
+    private static void validate(ObjectNode request) {
+        if (!request.path("model").isString() || !request.path("messages").isArray() || request.path("messages").isEmpty()) {
+            throw new GatewayException(400, "INVALID_REQUEST", "model (a route name) and a non-empty messages array are required");
+        }
+        List<String> nonStandard = RequestFields.nonStandardFields(request);
+        if (!nonStandard.isEmpty()) {
+            throw new GatewayException(400, "UNSUPPORTED_FIELD",
+                    "Non-standard request fields are not accepted: " + String.join(", ", nonStandard)
+                            + ". Vendor-specific switches are configured per model in the gateway.");
+        }
+        if (request.has("n") && !(request.path("n").isIntegralNumber() && request.path("n").asInt() == 1)) {
+            throw new GatewayException(400, "UNSUPPORTED_FIELD", "n must be 1: budgets are reserved for a single completion");
+        }
+        if (request.path("stream").asBoolean(false)) {
+            throw new GatewayException(400, "STREAMING_UNSUPPORTED", "stream=true is not supported by this gateway yet");
+        }
+    }
+
+    private Duration effectiveDeadline(String callerDeadlineMs) {
+        if (callerDeadlineMs == null || callerDeadlineMs.isBlank()) {
+            return deadline;
+        }
+        long millis;
+        try {
+            millis = Long.parseLong(callerDeadlineMs.trim());
+        } catch (NumberFormatException exception) {
+            millis = -1;
+        }
+        if (millis <= 0 || millis > Duration.ofMinutes(10).toMillis()) {
+            throw new GatewayException(400, "INVALID_DEADLINE", "X-Gateway-Deadline-Ms must be between 1 and 600000");
+        }
+        Duration caller = Duration.ofMillis(millis);
+        return caller.compareTo(deadline) < 0 ? caller : deadline;
+    }
+
+    private static boolean validCorrelationId(String value) {
+        return value != null && value.matches("[A-Za-z0-9._:-]{1,128}");
     }
 
     /** Returns the result, or null to move on to the next candidate. Throws to end the request. */
@@ -289,6 +353,7 @@ public final class GatewayService {
         ledger.insert(
                 new AttemptRecord(
                         exchange.requestId,
+                        exchange.correlationId,
                         attemptNo,
                         exchange.key.id(),
                         exchange.key.team(),
@@ -326,18 +391,28 @@ public final class GatewayService {
         private final String requestId;
         private final ClientKey key;
         private final String requestHash;
+        private final String correlationId;
         private final List<String> trail = new ArrayList<>();
         private int attempts;
 
-        private Exchange(String requestId, ClientKey key, String requestHash) {
+        private Exchange(String requestId, ClientKey key, String requestHash, String correlationId) {
             this.requestId = requestId;
             this.key = key;
             this.requestHash = requestHash;
+            this.correlationId = correlationId;
+        }
+
+        private Map<String, String> identityHeaders() {
+            Map<String, String> headers = new LinkedHashMap<>();
+            headers.put("X-Gateway-Request-Id", requestId);
+            if (correlationId != null) {
+                headers.put("X-Correlation-Id", correlationId);
+            }
+            return headers;
         }
 
         private Map<String, String> headers(String route, UpstreamModel served, String servedModel) {
-            Map<String, String> headers = new LinkedHashMap<>();
-            headers.put("X-Gateway-Request-Id", requestId);
+            Map<String, String> headers = identityHeaders();
             headers.put("X-Gateway-Route", route);
             headers.put("X-Gateway-Attempts", String.valueOf(attempts));
             headers.put("X-Gateway-Trail", String.join(";", trail));

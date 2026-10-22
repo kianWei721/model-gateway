@@ -3,6 +3,7 @@ package com.modelgateway.upstream;
 import com.modelgateway.catalog.Protocol;
 import com.modelgateway.catalog.UpstreamModel;
 import com.modelgateway.upstream.UpstreamFailure.Kind;
+import java.math.BigDecimal;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Map;
@@ -33,10 +34,20 @@ public final class OpenAiCompatibleAdapter implements UpstreamAdapter {
             body.remove("temperature");
             body.remove("top_p");
         }
-        return new PreparedCall(
-                model,
-                body,
-                RequestFields.maxOutputTokens(openAiRequest).orElse(model.defaultMaxTokens()));
+        // The budget reserves for this many output tokens, so the upstream must be held to it.
+        // Without an explicit cap it could answer longer than the reservation covers.
+        int maxOutputTokens = RequestFields.maxOutputTokens(openAiRequest).orElse(model.defaultMaxTokens());
+        if (RequestFields.maxOutputTokens(openAiRequest).isEmpty()) {
+            body.put("max_tokens", maxOutputTokens);
+        }
+        model.extraBody().forEach((field, value) -> {
+            switch (value) {
+                case Boolean flag -> body.put(field, flag);
+                case BigDecimal number -> body.put(field, number);
+                default -> body.put(field, value.toString());
+            }
+        });
+        return new PreparedCall(model, body, maxOutputTokens);
     }
 
     @Override
