@@ -75,16 +75,22 @@ gateway:
       bootstrap-key-env: ANTHROPIC_API_KEY
   models:
     - { provider: dashscope, model: qwen-turbo, currency: CNY, input-per-million: 0.30, output-per-million: 0.60 }
+    # Vendor switches live here, not in callers' requests: callers may only send standard fields.
+    - { provider: dashscope, model: qwen3.8-flash, currency: CNY, input-per-million: 0.30, output-per-million: 0.60,
+        extra-body: { enable_thinking: "false" } }
     - { provider: dashscope, model: qwen-plus, currency: CNY, input-per-million: 0.80, output-per-million: 2.00 }
     - { provider: deepseek, model: deepseek-chat, currency: CNY, input-per-million: 2.00, cached-input-per-million: 0.50, output-per-million: 8.00 }
     - { provider: deepseek, model: deepseek-reasoner, currency: CNY, input-per-million: 4.00, cached-input-per-million: 1.00, output-per-million: 16.00, supports-tools: false }
     - { provider: moonshot, model: moonshot-v1-32k, currency: CNY, input-per-million: 24.00, output-per-million: 24.00 }
     - { provider: openai, model: gpt-4.1, currency: USD, input-per-million: 2.00, cached-input-per-million: 0.50, output-per-million: 8.00 }
-    # Current Claude models reject temperature/top_p, and tool calls are not translated yet.
+    # Current Claude models reject temperature/top_p; tool calls and response_format are not translated yet.
     - { provider: anthropic, model: claude-opus-5-5, currency: USD, input-per-million: 4.00, cached-input-per-million: 0.20, output-per-million: 20.00,
-        forward-sampling: false, supports-tools: false, default-max-tokens: 16000 }
+        forward-sampling: false, supports-tools: false, supports-json-output: false, default-max-tokens: 16000 }
   routes:
     light: [dashscope/qwen-turbo, deepseek/deepseek-chat]
+    # Structured-output calls (AgentForge query rewrite / answerability). Only models evaluated with
+    # its json_schema prompts belong here; failing over to an untested model silently changes results.
+    rag-json: [dashscope/qwen3.8-flash, dashscope/qwen-plus]
     standard: [dashscope/qwen-plus, deepseek/deepseek-chat, moonshot/moonshot-v1-32k]
     reasoning: [anthropic/claude-opus-5-5, openai/gpt-4.1, deepseek/deepseek-reasoner]
   daily-budgets:

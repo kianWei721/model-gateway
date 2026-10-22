@@ -101,7 +101,7 @@ class BudgetServiceTest {
     @Test
     void restartShouldRebuildSpendFromTheLedger() {
         LocalDate today = LocalDate.now(clock.withZone(SHANGHAI));
-        ledger.insert(new AttemptRecord("req-1", 1, "ck-1", "finance", "tax", "standard", "dashscope", "qwen-plus",
+        ledger.insert(new AttemptRecord("req-1", null, 1, "ck-1", "finance", "tax", "standard", "dashscope", "qwen-plus",
                 "DOMESTIC", "qwen-plus", "MATCH", "abcd1234", Outcome.SUCCESS, null, 200,
                 new TokenUsage(1, 0, 0, 1, 0), new BigDecimal("0.95"), false, "CNY", "h", 10, today, clock.instant()));
 

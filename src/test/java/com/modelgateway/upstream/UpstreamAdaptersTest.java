@@ -67,6 +67,25 @@ class UpstreamAdaptersTest {
         assertEquals("qwen-plus", call.body().path("model").asString());
         assertFalse(call.body().has("stream"));
         assertEquals(256, call.maxOutputTokens());
+        assertEquals(256, call.body().path("max_tokens").asInt(), "the caller's cap is kept, not overwritten");
+    }
+
+    @Test
+    void missingCapShouldBeSentUpstreamSoTheReservationHolds() {
+        PreparedCall call =
+                openAi.prepare(model("dashscope/qwen-plus"), object("{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"));
+
+        assertEquals(1024, call.maxOutputTokens());
+        assertEquals(1024, call.body().path("max_tokens").asInt());
+    }
+
+    @Test
+    void vendorSwitchesShouldComeFromTheCatalogWithTheirRealType() {
+        PreparedCall call =
+                openAi.prepare(model("dashscope/qwen3.8-flash"), object("{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"));
+
+        assertTrue(call.body().path("enable_thinking").isBoolean());
+        assertFalse(call.body().path("enable_thinking").asBoolean());
     }
 
     @Test

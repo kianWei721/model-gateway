@@ -3,6 +3,7 @@ package com.modelgateway.catalog;
 import com.modelgateway.config.GatewayProperties;
 import com.modelgateway.config.GatewayProperties.ModelConfig;
 import com.modelgateway.config.GatewayProperties.ProviderConfig;
+import com.modelgateway.upstream.RequestFields;
 import java.math.BigDecimal;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -152,7 +153,43 @@ public final class Catalog {
                 config.forwardSampling(),
                 config.maxConcurrency(),
                 config.defaultMaxTokens(),
-                config.refusalFallback());
+                config.refusalFallback(),
+                config.supportsJsonOutput(),
+                extraBody(id, provider, config.extraBody()));
+    }
+
+    /**
+     * Typed vendor extensions for one model. They may not shadow standard fields: the operator
+     * adds vendor switches, it does not get to rewrite what the caller asked for.
+     */
+    private static Map<String, Object> extraBody(String id, Provider provider, Map<String, String> raw) {
+        if (raw == null || raw.isEmpty()) {
+            return Map.of();
+        }
+        if (provider.protocol() != Protocol.OPENAI) {
+            throw invalid("model " + id + ": extra-body is only supported for OPENAI protocol upstreams");
+        }
+        Map<String, Object> typed = new LinkedHashMap<>();
+        raw.forEach(
+                (field, value) -> {
+                    if (RequestFields.STANDARD.contains(field)) {
+                        throw invalid("model " + id + ": extra-body may not set standard field " + field);
+                    }
+                    typed.put(field, typedValue(value));
+                });
+        return typed;
+    }
+
+    /** YAML map values arrive as strings; restore booleans and numbers before they reach JSON. */
+    private static Object typedValue(String value) {
+        String trimmed = value == null ? "" : value.trim();
+        if ("true".equalsIgnoreCase(trimmed) || "false".equalsIgnoreCase(trimmed)) {
+            return Boolean.parseBoolean(trimmed);
+        }
+        if (trimmed.matches("-?\\d+(\\.\\d+)?")) {
+            return new BigDecimal(trimmed);
+        }
+        return trimmed;
     }
 
     private static Optional<InetSocketAddress> proxy(String provider, String value) {

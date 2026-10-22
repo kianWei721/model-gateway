@@ -75,7 +75,7 @@ class IntegrityTest {
     }
 
     private static void meter(LedgerRepository ledger, LocalDate day, String model, Outcome outcome, int prompt, int output) {
-        ledger.insert(new AttemptRecord("req-" + System.nanoTime(), 1, "ck", "finance", "tax", "standard", "deepseek", model,
+        ledger.insert(new AttemptRecord("req-" + System.nanoTime(), null, 1, "ck", "finance", "tax", "standard", "deepseek", model,
                 "DOMESTIC", model, "MATCH", "fp", outcome, null, 200, new TokenUsage(prompt, 0, 0, output, 0),
                 BigDecimal.ZERO, outcome == Outcome.UNKNOWN, "CNY", "h", 1, day, Instant.now()));
     }

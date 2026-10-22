@@ -133,6 +133,12 @@ public class AdminController {
         return ledger.attempts(requestId);
     }
 
+    /** Reverse lookup from a caller's trace id, e.g. an AgentForge retrieval, to every attempt. */
+    @GetMapping("/requests")
+    public List<Map<String, Object>> requestsByCorrelation(@RequestParam String correlationId) {
+        return ledger.attemptsByCorrelation(correlationId);
+    }
+
     @GetMapping("/budgets/{team}")
     public Map<String, Object> budget(@PathVariable String team, @RequestParam(defaultValue = "CNY") String currency) {
         return budgets.snapshot(team, currency.toUpperCase());

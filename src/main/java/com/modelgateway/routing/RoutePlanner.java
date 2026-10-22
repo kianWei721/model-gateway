@@ -43,6 +43,9 @@ public final class RoutePlanner {
                 excluded.add(candidate.id() + " (overseas, key not cleared)");
             } else if (traits.usesTools() && !candidate.supportsTools()) {
                 excluded.add(candidate.id() + " (no tool calling)");
+            } else if (traits.usesJsonOutput() && !candidate.supportsJsonOutput()) {
+                // A caller that parses JSON must not fail over to a model that ignores response_format.
+                excluded.add(candidate.id() + " (no JSON output)");
             } else {
                 eligible.add(candidate);
             }
@@ -56,5 +59,5 @@ public final class RoutePlanner {
         return List.copyOf(eligible);
     }
 
-    public record RequestTraits(boolean usesTools) {}
+    public record RequestTraits(boolean usesTools, boolean usesJsonOutput) {}
 }

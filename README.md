@@ -16,12 +16,14 @@
 | 密钥集中管理与轮换 | 厂商密钥用 AES-256-GCM 加密存储，密文带主密钥版本号；增加、停用密钥和轮换主密钥都不用重启 |
 | 某一家不可用时自动降级 | 按失败类型决定是否切到下一个候选；熔断按"厂商 + 模型"统计；每个上游有并发上限 |
 | 确认调用到的是付费的那个模型 | 上游地址只允许官方接入点（白名单）；逐次比对返回的 model 字段；按天和厂商账单对账 |
+| 调用可追溯 | 每个响应（包括错误）都带 `X-Gateway-Request-Id`；调用方传入的 `X-Correlation-Id` 写进流水，能反查一次业务请求触发的全部模型调用 |
 
 ## 请求经过什么
 
 ```text
 调用方 --Bearer gk-...--> 鉴权、RPM 限流
-  -> 路由规划：数据是否允许出境、模型是否支持工具调用（只过滤，不改顺序）
+  -> 校验：只收标准字段；算出截止时间（取调用方声明和网关上限的较小值）
+  -> 路由规划：数据是否允许出境、模型是否支持工具调用 / JSON 输出（只过滤，不改顺序）
   -> 逐个候选尝试：
        协议转换 -> 熔断检查 -> 并发上限 -> 取一把厂商密钥 -> 按上限预占预算
        -> 调用（不在这一层重试）-> 按失败类型决定下一步
@@ -29,6 +31,30 @@
   -> 响应头说明实际由谁服务：
        X-Gateway-Served-Provider / Served-Model / Region / Fallback / Attempts / Trail / Model-Check
 ```
+
+## 调用方约定
+
+**只收 OpenAI 标准字段。** 厂商私有参数（比如通义的 `enable_thinking`）直接返回 400 `UNSUPPORTED_FIELD`。需要这类参数的模型，在模型目录里配 `extra-body`，由网关在发往该模型时注入。原因是调用方不该知道这次请求会落到哪一家：降级到 DeepSeek 时还带着通义的私有参数，要么被拒，要么被静默忽略。
+
+**`max_tokens` 一定发给上游。** 调用方没带时，网关按模型目录里的默认上限补上。这样预占预算用的上限和厂商实际执行的上限是同一个数。
+
+**`X-Gateway-Deadline-Ms`：调用方还愿意等多久（毫秒）。** 网关取它和自身截止时间的较小值。剩余时间不够发起下一次尝试时，直接返回 504 `DEADLINE_EXCEEDED`，不会再调用上游。调用方已经放弃的请求，网关不再替它花钱。
+
+**`X-Correlation-Id`：调用方自己的链路 ID。** 写进每一次尝试的流水，用 `GET /admin/requests?correlationId=` 反查。
+
+**要求 JSON 输出的请求**（`response_format` 是 `json_object` 或 `json_schema`）会跳过不支持的模型。目前 Claude 适配器没做这项转换。
+
+**错误码决定能不能重试，HTTP 状态码不行。** 同样是 429，限流可以稍后重试，预算用完当天就不会恢复；同样是 504，截止时间到了没调用上游，可以重试，而结果未知的那次可能已经扣了费。
+
+| 错误码 | HTTP | 调用方能否自动重试 |
+|---|---|---|
+| `RATE_LIMITED` | 429 | 能，稍后 |
+| `BUDGET_EXCEEDED` | 429 | 不能，当天预算不会恢复 |
+| `NO_UPSTREAM_AVAILABLE` | 503 | 能 |
+| `DEADLINE_EXCEEDED` | 504 | 能，这次没有调用上游 |
+| `UPSTREAM_OUTCOME_UNKNOWN` | 504 | 不能，厂商可能已经扣费 |
+| `UNSUPPORTED_FIELD`、`INVALID_*`、`UNKNOWN_ROUTE`、`NO_ELIGIBLE_UPSTREAM`、`UPSTREAM_BAD_REQUEST` | 400 | 不能，要改请求 |
+| `ROUTE_NOT_ALLOWED` | 403 | 不能 |
 
 ## 关键取舍
 
@@ -103,6 +129,13 @@ curl -X POST localhost:8090/admin/client-keys -H "X-Admin-Token: change-me" -H "
   -d '{"team":"finance","project":"vat-filing","routes":["standard","reasoning"],"allowOverseas":false,"rpm":60}'
 ```
 
+AgentForge 接入时用的是 `rag-json` 路由（查询改写和可答性判定，都要求按 JSON Schema 输出）。这个路由只放用这套 prompt 评测过的模型；降级到没测过的模型，结果会悄悄变掉。知识库片段不能出境，所以这把 key 必须 `allowOverseas=false`：
+
+```bash
+curl -X POST localhost:8090/admin/client-keys -H "X-Admin-Token: $GATEWAY_ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"team":"platform","project":"agentforge","routes":["rag-json","standard"],"allowOverseas":false,"rpm":120}'
+```
+
 调用：
 
 ```bash
@@ -125,7 +158,7 @@ curl localhost:8090/v1/chat/completions -H "Authorization: Bearer gk-..." -H "Co
 JAVA_HOME=<jdk-25> mvn test
 ```
 
-共 50 个测试。上游都是 JDK `HttpServer` 写的假服务，可以按需返回指定的状态码、延迟和用量；数据库用 H2 的 MySQL 模式，执行的是生产环境同一套 Flyway 脚本。端到端测试 `GatewayFlowTest` 走真实 HTTP，覆盖以下场景：
+共 57 个测试。上游都是 JDK `HttpServer` 写的假服务，可以按需返回指定的状态码、延迟和用量；数据库用 H2 的 MySQL 模式，执行的是生产环境同一套 Flyway 脚本。端到端测试 `GatewayFlowTest` 走真实 HTTP，覆盖以下场景：
 
 - 503 后切换到下一家，两次尝试都写了流水，费用按缓存和非缓存分开计算
 - 读超时不重试，按估算入账
@@ -139,13 +172,19 @@ JAVA_HOME=<jdk-25> mvn test
 - RPM 限流
 - 管理接口签发 key，响应和数据库里都看不到厂商密钥明文
 - 对账识别出"厂商账单里有、网关从没调用过"的模型
+- 厂商私有字段被拒，错误响应同样带请求 ID
+- 调用方的截止时间不够时，一次上游都不调用，直接返回 504
+- `X-Correlation-Id` 原样返回，写进流水，能用管理接口反查
+
+`DemoCatalogTest` 用仓库里自带的 `application.yml` 启动，确认发布出去的模型目录能正常绑定（`extra-body`、JSON 输出能力、`rag-json` 路由）。
 
 ## 已知限制（没做或没验证的）
 
 - **没有接过真实的 MySQL 和真实厂商。** 只在 H2 上跑过 Flyway 脚本；本机没有 MySQL。也没有调用过任何真实的厂商 API。
 - **跨境代理没有实测。** 凭经验需要注意两点：JDK HttpClient 只支持 HTTP CONNECT 代理，不支持 SOCKS；HTTPS 隧道上的 Basic 代理认证默认是关闭的（`jdk.http.auth.tunneling.disabledSchemes`）。
 - **不支持流式输出。** 请求里带 `stream=true` 会直接返回 400。
-- **Claude 路由只支持纯文本对话。** 工具调用、图片、tool 消息都没做协议转换；遇到这类请求会跳过 Claude，换下一个候选。
+- **Claude 路由只支持纯文本对话。** 工具调用、图片、tool 消息、JSON 输出都没做协议转换；遇到这类请求会跳过 Claude，换下一个候选。
+- **`extra-body` 只支持 OpenAI 兼容协议的上游**，值只能是字符串、布尔值或数字。
 - **预算、限流、熔断的状态都在单个 JVM 里。** 只适用于单实例部署；多实例需要把计数器换成 Redis 等共享存储，接口不用变。
 - **管理接口只有一个静态 token。** 没有接 SSO，也没有细分权限。
 - **主密钥来自环境变量。** 生产环境应该放在 KMS 里。

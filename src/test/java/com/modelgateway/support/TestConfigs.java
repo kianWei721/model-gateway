@@ -30,6 +30,9 @@ public final class TestConfigs {
                         model("dashscope", "qwen-plus", "CNY", "0.80", "0.16", "2.00", true, true, false),
                         model("deepseek", "deepseek-chat", "CNY", "2.00", "0.50", "8.00", true, true, false),
                         model("deepseek", "deepseek-reasoner", "CNY", "4.00", "1.00", "16.00", false, true, false),
+                        withExtraBody(
+                                model("dashscope", "qwen3.8-flash", "CNY", "0.30", "0.06", "0.60", true, true, false),
+                                Map.of("enable_thinking", "false")),
                         model("anthropic", "claude-opus-5-5", "USD", "4.00", "0.20", "20.00", false, false, false));
 
         Map<String, List<String>> routes = new LinkedHashMap<>();
@@ -82,6 +85,28 @@ public final class TestConfigs {
                 forwardSampling,
                 4,
                 1024,
-                refusalFallback);
+                refusalFallback,
+                !"anthropic".equals(provider),
+                Map.of());
+    }
+
+    /** A DashScope model whose vendor switch is set by the gateway, not by callers. */
+    public static ModelConfig withExtraBody(ModelConfig base, Map<String, String> extraBody) {
+        return new ModelConfig(
+                base.provider(),
+                base.model(),
+                base.currency(),
+                base.inputPerMillion(),
+                base.cachedInputPerMillion(),
+                base.cacheWritePerMillion(),
+                base.outputPerMillion(),
+                base.servedModelAliases(),
+                base.supportsTools(),
+                base.forwardSampling(),
+                base.maxConcurrency(),
+                base.defaultMaxTokens(),
+                base.refusalFallback(),
+                base.supportsJsonOutput(),
+                extraBody);
     }
 }
