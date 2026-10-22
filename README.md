@@ -44,6 +44,8 @@
 
 **要求 JSON 输出的请求**（`response_format` 是 `json_object` 或 `json_schema`）会跳过不支持的模型。目前 Claude 适配器没做这项转换。
 
+**`logprobs`、`top_logprobs`、`logit_bias` 原样转发**，但这类请求只走 OpenAI 兼容协议的上游。Claude 适配器会重新拼请求体，这几个字段到它那里会被静默丢掉，调用方拿不到要的 logprobs，也不会收到任何提示。
+
 **错误码决定能不能重试，HTTP 状态码不行。** 同样是 429，限流可以稍后重试，预算用完当天就不会恢复；同样是 504，截止时间到了没调用上游，可以重试，而结果未知的那次可能已经扣了费。
 
 | 错误码 | HTTP | 调用方能否自动重试 |
@@ -158,7 +160,7 @@ curl localhost:8090/v1/chat/completions -H "Authorization: Bearer gk-..." -H "Co
 JAVA_HOME=<jdk-25> mvn test
 ```
 
-共 57 个测试。上游都是 JDK `HttpServer` 写的假服务，可以按需返回指定的状态码、延迟和用量；数据库用 H2 的 MySQL 模式，执行的是生产环境同一套 Flyway 脚本。端到端测试 `GatewayFlowTest` 走真实 HTTP，覆盖以下场景：
+共 59 个测试。上游都是 JDK `HttpServer` 写的假服务，可以按需返回指定的状态码、延迟和用量；数据库用 H2 的 MySQL 模式，执行的是生产环境同一套 Flyway 脚本。端到端测试 `GatewayFlowTest` 走真实 HTTP，覆盖以下场景：
 
 - 503 后切换到下一家，两次尝试都写了流水，费用按缓存和非缓存分开计算
 - 读超时不重试，按估算入账
@@ -173,6 +175,7 @@ JAVA_HOME=<jdk-25> mvn test
 - 管理接口签发 key，响应和数据库里都看不到厂商密钥明文
 - 对账识别出"厂商账单里有、网关从没调用过"的模型
 - 厂商私有字段被拒，错误响应同样带请求 ID
+- `logprobs`、`top_logprobs`、`logit_bias` 原样转发给 OpenAI 兼容上游
 - 调用方的截止时间不够时，一次上游都不调用，直接返回 504
 - `X-Correlation-Id` 原样返回，写进流水，能用管理接口反查
 
@@ -184,7 +187,7 @@ JAVA_HOME=<jdk-25> mvn test
 - **真实厂商只跑过一次百炼冒烟**，见 [docs/smoke-test-2026-10-22.md](docs/smoke-test-2026-10-22.md)：qwen3.8-flash 调用成功，qwen-plus 的 403 正确触发了降级和告警。其他厂商没有调用过。
 - **跨境代理没有实测。** 凭经验需要注意两点：JDK HttpClient 只支持 HTTP CONNECT 代理，不支持 SOCKS；HTTPS 隧道上的 Basic 代理认证默认是关闭的（`jdk.http.auth.tunneling.disabledSchemes`）。
 - **不支持流式输出。** 请求里带 `stream=true` 会直接返回 400。
-- **Claude 路由只支持纯文本对话。** 工具调用、图片、tool 消息、JSON 输出都没做协议转换；遇到这类请求会跳过 Claude，换下一个候选。
+- **Claude 路由只支持纯文本对话。** 工具调用、图片、tool 消息、JSON 输出、logprobs / logit_bias 都没做协议转换；遇到这类请求会跳过 Claude，换下一个候选。
 - **`extra-body` 只支持 OpenAI 兼容协议的上游**，值只能是字符串、布尔值或数字。
 - **预算、限流、熔断的状态都在单个 JVM 里。** 只适用于单实例部署；多实例需要把计数器换成 Redis 等共享存储，接口不用变。
 - **管理接口只有一个静态 token。** 没有接 SSO，也没有细分权限。

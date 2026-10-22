@@ -32,6 +32,9 @@ public final class RequestFields {
                     "seed",
                     "presence_penalty",
                     "frequency_penalty",
+                    "logprobs",
+                    "top_logprobs",
+                    "logit_bias",
                     "user",
                     "n");
 
@@ -55,6 +58,16 @@ public final class RequestFields {
     public static boolean usesJsonOutput(JsonNode request) {
         String type = request.path("response_format").path("type").asString("");
         return "json_object".equals(type) || "json_schema".equals(type);
+    }
+
+    /**
+     * Token probabilities or biased sampling. Only OpenAI-protocol upstreams honour these; another
+     * protocol would silently drop them and answer something the caller did not ask for.
+     */
+    public static boolean usesLogitControls(JsonNode request) {
+        return request.path("logprobs").asBoolean(false)
+                || (request.has("top_logprobs") && !request.path("top_logprobs").isNull())
+                || (request.path("logit_bias").isObject() && !request.path("logit_bias").isEmpty());
     }
 
     public static List<String> nonStandardFields(JsonNode request) {

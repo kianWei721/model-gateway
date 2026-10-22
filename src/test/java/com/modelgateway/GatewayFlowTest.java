@@ -180,6 +180,24 @@ class GatewayFlowTest {
     }
 
     @Test
+    void standardSamplingFieldsShouldReachAnOpenAiUpstreamUntouched() {
+        FAKE.on(DASHSCOPE, request -> openAiOk("qwen-plus", usage(1, 1)));
+
+        HttpResponse<String> response =
+                post(
+                        key("finance", false),
+                        HELLO.replace(
+                                "{",
+                                "{\"logprobs\":true,\"top_logprobs\":2,\"logit_bias\":{\"1234\":-100},"));
+
+        assertEquals(200, response.statusCode());
+        JsonNode sent = json.readTree(FAKE.requestsTo(DASHSCOPE).getFirst().body());
+        assertTrue(sent.path("logprobs").asBoolean());
+        assertEquals(2, sent.path("top_logprobs").asInt());
+        assertEquals(-100, sent.path("logit_bias").path("1234").asInt());
+    }
+
+    @Test
     void callerDeadlineShouldStopTheGatewayBeforeItSpendsMoney() {
         FAKE.on(DASHSCOPE, request -> openAiOk("qwen-plus", usage(1, 1)));
 

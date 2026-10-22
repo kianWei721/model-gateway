@@ -2,6 +2,7 @@ package com.modelgateway.routing;
 
 import com.modelgateway.auth.ClientKey;
 import com.modelgateway.catalog.Catalog;
+import com.modelgateway.catalog.Protocol;
 import com.modelgateway.catalog.Region;
 import com.modelgateway.catalog.UpstreamModel;
 import com.modelgateway.core.GatewayException;
@@ -46,6 +47,9 @@ public final class RoutePlanner {
             } else if (traits.usesJsonOutput() && !candidate.supportsJsonOutput()) {
                 // A caller that parses JSON must not fail over to a model that ignores response_format.
                 excluded.add(candidate.id() + " (no JSON output)");
+            } else if (traits.usesLogitControls()
+                    && candidate.provider().protocol() != Protocol.OPENAI) {
+                excluded.add(candidate.id() + " (no logprobs / logit_bias)");
             } else {
                 eligible.add(candidate);
             }
@@ -59,5 +63,10 @@ public final class RoutePlanner {
         return List.copyOf(eligible);
     }
 
-    public record RequestTraits(boolean usesTools, boolean usesJsonOutput) {}
+    public record RequestTraits(boolean usesTools, boolean usesJsonOutput, boolean usesLogitControls) {
+
+        public RequestTraits(boolean usesTools, boolean usesJsonOutput) {
+            this(usesTools, usesJsonOutput, false);
+        }
+    }
 }

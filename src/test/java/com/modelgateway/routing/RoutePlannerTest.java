@@ -42,6 +42,14 @@ class RoutePlannerTest {
     }
 
     @Test
+    void logprobsAndLogitBiasShouldNeverReachAProtocolThatDropsThem() {
+        // The Anthropic adapter rebuilds the request and would silently drop these fields.
+        List<String> plan = ids(planner.plan("reasoning", key(true), new RequestTraits(false, false, true)));
+
+        assertEquals(List.of("deepseek/deepseek-reasoner"), plan);
+    }
+
+    @Test
     void toolRequestsShouldSkipUpstreamsWithoutToolCalling() {
         GatewayException exception =
                 assertThrows(

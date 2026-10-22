@@ -136,7 +136,13 @@ public final class GatewayService {
         validate(request);
         String route = request.path("model").asString("");
         List<UpstreamModel> candidates =
-                planner.plan(route, key, new RequestTraits(RequestFields.usesTools(request), RequestFields.usesJsonOutput(request)));
+                planner.plan(
+                        route,
+                        key,
+                        new RequestTraits(
+                                RequestFields.usesTools(request),
+                                RequestFields.usesJsonOutput(request),
+                                RequestFields.usesLogitControls(request)));
         int estimatedPrompt = TokenEstimator.estimatePromptTokens(request);
 
         for (int index = 0; index < candidates.size(); index++) {
