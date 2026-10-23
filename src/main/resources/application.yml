@@ -79,6 +79,11 @@ gateway:
     - { provider: dashscope, model: qwen3.8-flash, currency: CNY, input-per-million: 0.30, output-per-million: 0.60,
         extra-body: { enable_thinking: "false" } }
     - { provider: dashscope, model: qwen-plus, currency: CNY, input-per-million: 0.80, output-per-million: 2.00 }
+    # DeepSeek served through Bailian (same endpoint and key as the Qwen models), not DeepSeek's own
+    # API. Tool calling and JSON output are not verified on it yet, so it is not offered for them.
+    # It thinks by default; with enable_thinking=false a short answer took 40 tokens instead of 154.
+    - { provider: dashscope, model: deepseek-v4.1-flash-1017, currency: CNY, input-per-million: 1.00, output-per-million: 4.00,
+        supports-tools: false, supports-json-output: false, extra-body: { enable_thinking: "false" } }
     - { provider: deepseek, model: deepseek-chat, currency: CNY, input-per-million: 2.00, cached-input-per-million: 0.50, output-per-million: 8.00 }
     - { provider: deepseek, model: deepseek-reasoner, currency: CNY, input-per-million: 4.00, cached-input-per-million: 1.00, output-per-million: 16.00, supports-tools: false }
     - { provider: moonshot, model: moonshot-v1-32k, currency: CNY, input-per-million: 24.00, output-per-million: 24.00 }
@@ -91,7 +96,7 @@ gateway:
     # Structured-output calls (AgentForge query rewrite / answerability). Only models evaluated with
     # its json_schema prompts belong here; failing over to an untested model silently changes results.
     rag-json: [dashscope/qwen3.8-flash, dashscope/qwen-plus]
-    standard: [dashscope/qwen-plus, deepseek/deepseek-chat, moonshot/moonshot-v1-32k]
+    standard: [dashscope/deepseek-v4.1-flash-1017, dashscope/qwen-plus, deepseek/deepseek-chat, moonshot/moonshot-v1-32k]
     reasoning: [anthropic/claude-opus-5-5, openai/gpt-4.1, deepseek/deepseek-reasoner]
   daily-budgets:
     finance:
