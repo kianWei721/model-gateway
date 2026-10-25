@@ -198,6 +198,42 @@ class GatewayFlowTest {
     }
 
     @Test
+    void anAgentTurnShouldSkipClaudeAndCarryToolCallsUntouched() {
+        FAKE.on(DASHSCOPE, request -> Reply.json(200, """
+                {"id":"chatcmpl-2","object":"chat.completion","model":"qwen-plus",
+                 "choices":[{"index":0,"message":{"role":"assistant","content":null,
+                   "tool_calls":[{"id":"call_1","type":"function",
+                     "function":{"name":"search_knowledge","arguments":"{\\\"query\\\":\\\"发票\\\"}"}}]},
+                   "finish_reason":"tool_calls"}],
+                 "usage":{"prompt_tokens":40,"completion_tokens":12}}"""));
+        // Overseas allowed: Claude is skipped for the tools alone, not for where it runs.
+        String agentKey =
+                clientKeys.issue("finance", "agentforge", Set.of("agent"), true, 600).plaintext();
+        String turn = """
+                {"model":"agent","max_tokens":512,"parallel_tool_calls":false,
+                 "tools":[{"type":"function","function":{"name":"search_knowledge","description":"查知识库",
+                   "parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}}}],
+                 "messages":[{"role":"system","content":"助手"},{"role":"user","content":"发票怎么开"},
+                   {"role":"assistant","content":null,"tool_calls":[{"id":"call_0","type":"function",
+                     "function":{"name":"search_knowledge","arguments":"{\\\"query\\\":\\\"开票\\\"}"}}]},
+                   {"role":"tool","tool_call_id":"call_0","content":"开票流程……"}]}""";
+
+        HttpResponse<String> response = post(agentKey, turn);
+
+        assertEquals(200, response.statusCode(), response.body());
+        assertTrue(FAKE.requestsTo(ANTHROPIC).isEmpty(), "tool calls are not translated for Claude: it is skipped");
+        JsonNode sent = json.readTree(FAKE.requestsTo(DASHSCOPE).getFirst().body());
+        assertEquals("search_knowledge", sent.path("tools").path(0).path("function").path("name").asString());
+        assertFalse(sent.path("parallel_tool_calls").asBoolean(true));
+        assertEquals("call_0", sent.path("messages").path(3).path("tool_call_id").asString());
+        assertEquals("call_0", sent.path("messages").path(2).path("tool_calls").path(0).path("id").asString());
+        JsonNode call = body(response).path("choices").path(0).path("message").path("tool_calls").path(0);
+        assertEquals("call_1", call.path("id").asString());
+        assertEquals("{\"query\":\"发票\"}", call.path("function").path("arguments").asString());
+        assertEquals("tool_calls", body(response).path("choices").path(0).path("finish_reason").asString());
+    }
+
+    @Test
     void callerDeadlineShouldStopTheGatewayBeforeItSpendsMoney() {
         FAKE.on(DASHSCOPE, request -> openAiOk("qwen-plus", usage(1, 1)));
 

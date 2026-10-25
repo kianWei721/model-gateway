@@ -25,6 +25,7 @@ gateway:
   routes:
     standard: [dashscope/qwen-plus, deepseek/deepseek-chat]
     reasoning: [anthropic/claude-opus-5-5, deepseek/deepseek-reasoner]
+    agent: [anthropic/claude-opus-5-5, dashscope/qwen-plus]
   daily-budgets:
     finance:
       CNY: 100

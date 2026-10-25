@@ -38,6 +38,14 @@ class DemoCatalogTest {
         assertFalse(deepseekOnBailian.supportsJsonOutput());
         assertEquals(Boolean.FALSE, deepseekOnBailian.extraBody().get("enable_thinking"));
 
+        // Agent turns call tools: every candidate must take them, and none may be a protocol the
+        // gateway does not translate tool calls for.
+        var agent = catalog.route("agent").orElseThrow();
+        assertEquals(
+                java.util.List.of("dashscope/qwen3.8-flash", "dashscope/qwen-plus"),
+                agent.stream().map(UpstreamModel::id).toList());
+        assertTrue(agent.stream().allMatch(UpstreamModel::supportsTools));
+
         UpstreamModel claude = catalog.model("anthropic/claude-opus-5-5").orElseThrow();
         assertFalse(claude.supportsJsonOutput());
         assertFalse(claude.forwardSampling());
