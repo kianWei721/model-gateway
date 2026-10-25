@@ -98,6 +98,11 @@ gateway:
     rag-json: [dashscope/qwen3.8-flash, dashscope/qwen-plus]
     standard: [dashscope/deepseek-v4.1-flash-1017, dashscope/qwen-plus, deepseek/deepseek-chat, moonshot/moonshot-v1-32k]
     reasoning: [anthropic/claude-opus-5-5, openai/gpt-4.1, deepseek/deepseek-reasoner]
+    # AgentForge agent turns: tool calling, non-streamed. Only models that call tools through the
+    # OpenAI-compatible protocol; no cross-vendor failover, so one turn is never answered by two
+    # vendors' models. qwen3.8-flash was smoke-tested with the agent's tools; qwen-plus is the
+    # fallback and has not been yet.
+    agent: [dashscope/qwen3.8-flash, dashscope/qwen-plus]
   daily-budgets:
     finance:
       CNY: 200

@@ -131,11 +131,11 @@ curl -X POST localhost:8090/admin/client-keys -H "X-Admin-Token: change-me" -H "
   -d '{"team":"finance","project":"vat-filing","routes":["standard","reasoning"],"allowOverseas":false,"rpm":60}'
 ```
 
-AgentForge 接入时用的是 `rag-json` 路由（查询改写和可答性判定，都要求按 JSON Schema 输出）。这个路由只放用这套 prompt 评测过的模型；降级到没测过的模型，结果会悄悄变掉。知识库片段不能出境，所以这把 key 必须 `allowOverseas=false`：
+AgentForge 的 Agent 主对话用 `agent` 路由：要调用工具、不流式，只放能经 OpenAI 兼容协议调工具的 DashScope 模型，不跨厂商（网关不翻译 Claude 的工具调用，带 tools 的请求会跳过它）。AgentForge 的知识检索用的是 `rag-json` 路由（查询改写和可答性判定，都要求按 JSON Schema 输出）。这个路由只放用这套 prompt 评测过的模型；降级到没测过的模型，结果会悄悄变掉。知识库片段不能出境，所以这把 key 必须 `allowOverseas=false`：
 
 ```bash
 curl -X POST localhost:8090/admin/client-keys -H "X-Admin-Token: $GATEWAY_ADMIN_TOKEN" -H "Content-Type: application/json" \
-  -d '{"team":"platform","project":"agentforge","routes":["rag-json","standard"],"allowOverseas":false,"rpm":120}'
+  -d '{"team":"platform","project":"agentforge","routes":["rag-json","standard","light","agent"],"allowOverseas":false,"rpm":120}'
 ```
 
 调用：
@@ -179,7 +179,7 @@ JAVA_HOME=<jdk-25> mvn test
 - 调用方的截止时间不够时，一次上游都不调用，直接返回 504
 - `X-Correlation-Id` 原样返回，写进流水，能用管理接口反查
 
-`DemoCatalogTest` 用仓库里自带的 `application.yml` 启动，确认发布出去的模型目录能正常绑定（`extra-body`、JSON 输出能力、`rag-json` 路由）。
+`DemoCatalogTest` 用仓库里自带的 `application.yml` 启动，确认发布出去的模型目录能正常绑定（`extra-body`、JSON 输出能力、`rag-json` 路由、`agent` 路由只有支持工具的模型）。
 
 ## 已知限制（没做或没验证的）
 
