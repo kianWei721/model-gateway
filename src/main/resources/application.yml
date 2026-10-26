@@ -79,6 +79,10 @@ gateway:
     - { provider: dashscope, model: qwen3.8-flash, currency: CNY, input-per-million: 0.30, output-per-million: 0.60,
         extra-body: { enable_thinking: "false" } }
     - { provider: dashscope, model: qwen-plus, currency: CNY, input-per-million: 0.80, output-per-million: 2.00 }
+    # Tool calling verified on 2026-10-26 by AgentForge's GatewayAgentSmokeTest through the gateway
+    # (11/11 turns, 20 calls). Placeholder price like the rest; check Bailian's before relying on budgets.
+    - { provider: dashscope, model: qwen3.8-27b, currency: CNY, input-per-million: 0.50, output-per-million: 2.00,
+        extra-body: { enable_thinking: "false" } }
     # DeepSeek served through Bailian (same endpoint and key as the Qwen models), not DeepSeek's own
     # API. Tool calling and JSON output are not verified on it yet, so it is not offered for them.
     # It thinks by default; with enable_thinking=false a short answer took 40 tokens instead of 154.
@@ -100,9 +104,9 @@ gateway:
     reasoning: [anthropic/claude-opus-5-5, openai/gpt-4.1, deepseek/deepseek-reasoner]
     # AgentForge agent turns: tool calling, non-streamed. Only models that call tools through the
     # OpenAI-compatible protocol; no cross-vendor failover, so one turn is never answered by two
-    # vendors' models. qwen3.8-flash was smoke-tested with the agent's tools; qwen-plus is the
-    # fallback and has not been yet.
-    agent: [dashscope/qwen3.8-flash, dashscope/qwen-plus]
+    # vendors' models. Every candidate has passed AgentForge's GatewayAgentSmokeTest; qwen-plus was
+    # never tool-tested and is not one.
+    agent: [dashscope/qwen3.8-flash, dashscope/qwen3.8-27b]
   daily-budgets:
     finance:
       CNY: 200
