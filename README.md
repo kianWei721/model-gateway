@@ -131,7 +131,7 @@ curl -X POST localhost:8090/admin/client-keys -H "X-Admin-Token: change-me" -H "
   -d '{"team":"finance","project":"vat-filing","routes":["standard","reasoning"],"allowOverseas":false,"rpm":60}'
 ```
 
-AgentForge 的 Agent 主对话用 `agent` 路由：要调用工具、不流式，只放能经 OpenAI 兼容协议调工具的 DashScope 模型，不跨厂商（网关不翻译 Claude 的工具调用，带 tools 的请求会跳过它）。AgentForge 的知识检索用的是 `rag-json` 路由（查询改写和可答性判定，都要求按 JSON Schema 输出）。这个路由只放用这套 prompt 评测过的模型；降级到没测过的模型，结果会悄悄变掉。知识库片段不能出境，所以这把 key 必须 `allowOverseas=false`：
+AgentForge 的 Agent 主对话用 `agent` 路由：要调用工具、不流式，只放能经 OpenAI 兼容协议调工具的 DashScope 模型，不跨厂商（网关不翻译 Claude 的工具调用，带 tools 的请求会跳过它）。目前是 `qwen3.8-flash`、`qwen3.8-27b`，都用 AgentForge 的 Agent 工具冒烟过；`qwen-plus` 没测过工具调用，不在其中。AgentForge 的知识检索用的是 `rag-json` 路由（查询改写和可答性判定，都要求按 JSON Schema 输出）。这个路由只放用这套 prompt 评测过的模型；降级到没测过的模型，结果会悄悄变掉。知识库片段不能出境，所以这把 key 必须 `allowOverseas=false`：
 
 ```bash
 curl -X POST localhost:8090/admin/client-keys -H "X-Admin-Token: $GATEWAY_ADMIN_TOKEN" -H "Content-Type: application/json" \

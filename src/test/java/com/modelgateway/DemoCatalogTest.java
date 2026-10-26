@@ -42,9 +42,10 @@ class DemoCatalogTest {
         // gateway does not translate tool calls for.
         var agent = catalog.route("agent").orElseThrow();
         assertEquals(
-                java.util.List.of("dashscope/qwen3.8-flash", "dashscope/qwen-plus"),
+                java.util.List.of("dashscope/qwen3.8-flash", "dashscope/qwen3.8-27b"),
                 agent.stream().map(UpstreamModel::id).toList());
         assertTrue(agent.stream().allMatch(UpstreamModel::supportsTools));
+        assertEquals(Boolean.FALSE, agent.get(1).extraBody().get("enable_thinking"));
 
         UpstreamModel claude = catalog.model("anthropic/claude-opus-5-5").orElseThrow();
         assertFalse(claude.supportsJsonOutput());
